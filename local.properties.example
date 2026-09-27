@@ -1,0 +1,6 @@
+# Copy to ignored local.properties; no credentials or real backend URL.
+sdk.dir=C:/Users/YOU/AppData/Local/Android/Sdk
+# Only a disposable loopback bridge. Blank disables networking.
+ekpay.testBaseUrl=https://localhost:3443
+# Keep false until an isolated bridge/certificate is configured.
+ekpay.sandboxNetworking=false
