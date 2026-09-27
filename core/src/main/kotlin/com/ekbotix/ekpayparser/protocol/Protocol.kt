@@ -30,7 +30,7 @@ object Protocol {
         return bytes(JsonObject().apply {
             addProperty("provider", e.provider); addProperty("provider_transaction_id", e.transactionId)
             addProperty("amount_minor", e.amountMinor); addProperty("currency", "BDT")
-            addProperty("receiver_identity_hash", e.receiverHash)
+            add("receiver_identity_hash", e.receiverHash?.let { JsonPrimitive(it) } ?: JsonNull.INSTANCE)
             add("sender_identity_hash", e.senderHash?.let { JsonPrimitive(it) } ?: JsonNull.INSTANCE)
             addProperty("provider_timestamp", e.providerTimestamp)
         })

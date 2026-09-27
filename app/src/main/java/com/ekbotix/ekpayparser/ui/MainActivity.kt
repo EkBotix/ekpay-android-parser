@@ -10,6 +10,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.ekbotix.ekpayparser.sms.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -50,9 +57,18 @@ class ParserViewModel(application:Application):AndroidViewModel(application){
     private fun schedule(){if(BuildConfig.SANDBOX_NETWORKING)SyncWorker.now(getApplication())}
     fun sync()=run {repository.sync();state=repository.state.load();queue=repository.queue.all();message=state.summary}
     fun settings(consent:Boolean,logging:Boolean)=run {repository.settings(consent,logging);state=repository.state.load()}
-    fun stop()=run {repository.markRevoked();state=repository.state.load();queue=repository.queue.all();message="Local terminal stop. New backend registration/identity required."}
+    fun stop()=run {repository.markRevoked();state=repository.state.load();queue=repository.queue.all();message="Local terminal stop."}
+    fun injectSms(context: android.content.Context, sender: String, body: String) {
+        val inputData = androidx.work.workDataOf(
+            "sender" to sender,
+            "body" to body,
+            "receivedAt" to System.currentTimeMillis()
+        )
+        val request = androidx.work.OneTimeWorkRequestBuilder<com.ekbotix.ekpayparser.workers.SmsProcessingWorker>().setInputData(inputData).build()
+        androidx.work.WorkManager.getInstance(context).enqueue(request)
+        message = "Injected synthetic SMS to worker"
+    }
 }
-
 class MainActivity:ComponentActivity(){
     override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         setContent {MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF157A68),surface=Color(0xFFF5F8F7))){ParserScreen()}}}
@@ -65,7 +81,7 @@ class MainActivity:ComponentActivity(){
         Text("TEST MODE / SANDBOX",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
         Text("Synthetic data only · No SMS permission · No real payment verification",style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Status","Pair","Evidence").forEach{s->OutlinedButton(onClick={screen=s}){Text(s)}}}
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Queue","Diagnostics","Settings").forEach{s->TextButton(onClick={screen=s}){Text(s)}}}
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Queue","Diagnostics","Settings","SMS Detection").forEach{s->TextButton(onClick={screen=s}){Text(s)}}}
         if(vm.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(vm.message,style=MaterialTheme.typography.bodyMedium)
         if(screen=="Status"||screen=="Diagnostics"){
@@ -80,6 +96,25 @@ class MainActivity:ComponentActivity(){
             "Queue"->{Text("Durable encrypted synthetic queue",style=MaterialTheme.typography.titleLarge);Text("Pending: ${vm.queue.count {it.status=="pending"}} · Max 100 · Retention 24 hours");Button(onClick={vm.sync()},enabled=canSend && BuildConfig.SANDBOX_NETWORKING){Text("Sync test queue")};vm.queue.forEach{q->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(q.path.substringAfterLast('/')+" · "+q.status);Text(q.ingestionId,style=MaterialTheme.typography.bodySmall);Text("Attempts: ${q.attempts} · ${q.safeError?:"No error"}")}}}}
             "Diagnostics"->{Text("Safe diagnostics",style=MaterialTheme.typography.titleLarge);Text(vm.state.summary);Text("Last success: ${vm.state.lastSuccess?.let(Protocol::iso)?:"Never"}");Text("Last failure: ${vm.state.lastFailure?.let(Protocol::iso)?:"Never"}");Text("Clock freshness: ±5 minutes. UTC milliseconds at send time. Check the system clock after generic authentication failure; do not spoof server time.");Text("No private keys, pairing tokens, signatures or payload dumps are logged.");OutlinedButton(onClick={vm.refresh()},enabled=!vm.busy){Text("Refresh state")}}
             "Settings"->{Text("Sandbox settings",style=MaterialTheme.typography.titleLarge);Text("Backend: ${BuildConfig.TEST_BASE_URL.ifBlank{"Not configured"}}");Text("Network enabled: ${BuildConfig.DEBUG && BuildConfig.SANDBOX_NETWORKING}");Row{Checkbox(checked=vm.state.softwareConsent,onCheckedChange={vm.settings(it,vm.state.debugLogging)});Text("Explicitly allow Keystore AES-GCM protected software Ed25519 (sandbox only)",Modifier.weight(1f))};Text("Native non-exportable Ed25519 is tried first on API 33+. Fallback is encrypted with a non-exportable Android Keystore AES key, never plaintext; process compromise can expose decrypted software signing material.");Row{Checkbox(checked=vm.state.debugLogging,onCheckedChange={vm.settings(vm.state.softwareConsent,it)});Text("Safe development status logs only")}}
+            "SMS Detection"->{
+                val context = LocalContext.current
+                var hasSmsPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED) }
+                val requestPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasSmsPermission = it }
+                Text("SMS Detection",style=MaterialTheme.typography.titleLarge)
+                Text("EkPay Parser detects supported payment notification SMS. It ignores unsupported senders, does not send SMS, does not upload unrelated SMS, does not store the full inbox, and sends only normalized payment evidence.")
+                if(hasSmsPermission) {
+                    Text("SMS Detection is ENABLED.", color=MaterialTheme.colorScheme.primary)
+                    var sender by remember{mutableStateOf("TEST_BKASH")}
+                    var body by remember{mutableStateOf("You have received Tk 150.00 from 017XXXX. TxnId: TEST_X1Y2Z3")}
+                    OutlinedTextField(sender,{sender=it},label={Text("Test Sender")})
+                    OutlinedTextField(body,{body=it},label={Text("Test SMS Body")},modifier=Modifier.fillMaxWidth())
+                    Button(onClick={vm.injectSms(context, sender, body)},enabled=canSend){Text("Inject Synthetic SMS")}
+                } else {
+                    Button(onClick={ requestPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) }) {
+                        Text("Enable SMS Detection")
+                    }
+                }
+            }
             else->{Text(if(identity==null)"Not paired" else "Device status",style=MaterialTheme.typography.titleLarge);Text("Status: ${identity?.state?:"not paired"}");Text("Public device ID: ${identity?.deviceId?:"Not assigned"}");Text("Environment: TEST · Protocol: 1");Text("Key version: ${identity?.keyVersion?:0} · App: ${BuildConfig.VERSION_NAME}");Text("Provider/account: synthetic backend binding; never caller-selected");Text("Last sync: ${vm.state.lastSuccess?.let(Protocol::iso)?:"Never"}");Text("Pending queue: ${vm.queue.count {it.status=="pending"}}");Button(onClick={vm.heartbeat()},enabled=canSend){Text("Send Test Heartbeat")};OutlinedButton(onClick={vm.stop()},enabled=identity!=null && identity.state!="revoked" && !vm.busy){Text("Stop locally / mark revoked")};Text("Generic 401 pauses every retry; it does not prove remote revocation. Revoked/key-loss identities never automatically reactivate.")}
         }
     }}

@@ -37,6 +37,15 @@ class ParserRepository(val state:DeviceState, val keys:ParserKeyStore, val queue
         keys.publicKey(identity.alias);queue.prune(System.currentTimeMillis()-86_400_000);check(queue.totalCount()<100)
         val id=Protocol.ingestionId();queue.add(QueueItem(id,identity.deviceId,path,protected.encrypt("queue:$id",body),System.currentTimeMillis()));id
     }
+    suspend fun enqueueSms(path:String,body:ByteArray,dedupe:DedupeItem):Boolean=mutex.withLock {
+        val current=state.load();val identity=current.identity?:error("Pairing required")
+        check(current.pending==null && identity.state=="active" && identity.environment=="test")
+        keys.publicKey(identity.alias)
+        val now=System.currentTimeMillis();queue.prune(now-86_400_000);queue.pruneDedupe(now-7*24*60*60*1000L)
+        val id=Protocol.ingestionId()
+        val item=QueueItem(id,identity.deviceId,path,protected.encrypt("queue:$id",body),now)
+        queue.enqueueAndDedupeIfNew(item,dedupe)
+    }
     suspend fun sync()=mutex.withLock {
         val current=state.load();val identity=current.identity
         if(identity==null || identity.state!="active" || current.pending!=null)return@withLock
