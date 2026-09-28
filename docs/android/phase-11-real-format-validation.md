@@ -24,6 +24,23 @@ OBSERVED
 bKash notification package identity:
 UNVERIFIED
 
-Nagad / Rocket / Upay:
+Nagad SMS sender:
+OBSERVED
+
+Nagad Money Received format:
+VERIFIED
+
+Nagad Cash In format:
+VERIFIED
+
+Nagad OTP:
+OBSERVED and REJECTED
+
+Nagad notification package identity:
 UNVERIFIED
 
+Other rejection formats (Cash Out, Payment, Send Money, etc.):
+TESTED as adversarial safety cases (unobserved)
+
+Rocket / Upay:
+UNVERIFIED
