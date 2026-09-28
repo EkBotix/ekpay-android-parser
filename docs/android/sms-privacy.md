@@ -1,12 +1,13 @@
 # SMS privacy boundary
 
-EkPay listens only to newly delivered SMS after explicit RECEIVE_SMS grant. It does not use
-READ_SMS, scan inbox/history, request contacts or phone state, or infer the receiver account
-from SIM/slot data. Receiver identity remains null without trustworthy provider data.
+EkPay uses RECEIVE_SMS for best-effort realtime delivery. In the Phase 10 internal build,
+READ_SMS can be granted separately from the Recovery screen for a bounded inbox-only scan.
+It does not inspect sent SMS, request contacts or phone state, or infer the receiver account
+from SIM/slot data. See [sms-recovery](sms-recovery.md).
 
-Parsing occurs in memory. WorkManager receives only provider, synthetic transaction ID,
-minor-unit amount, SHA-256 message hash, local receipt time and an independently approved
-provider timestamp. Raw SMS and raw sender are not stored in WorkManager, Room or logs.
+Parsing occurs in memory. WorkManager never receives a raw body or sender. Room stores an
+encrypted protocol body plus normalized dedupe/status metadata. Raw SMS and raw sender are
+not stored in WorkManager, Room or logs.
 Without an approved deterministic provider timestamp, the receiver creates no evidence job;
 local receipt time is never substituted as provider time.
 

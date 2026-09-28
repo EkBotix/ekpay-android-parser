@@ -1,6 +1,9 @@
 package com.ekbotix.ekpayparser.sms
 
 import java.math.BigDecimal
+import java.time.Instant
+import java.time.format.DateTimeFormatterBuilder
+import java.time.temporal.ChronoUnit
 
 object SmsText {
     fun normalized(value:String)=buildString(value.length) {
@@ -36,6 +39,7 @@ object SmsSafety {
 }
 
 object FormatAnalyzer {
+    private val isoTimestamp=Regex("\\b20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{3})?(?:Z|[+-][0-2][0-9]:[0-5][0-9])\\b")
     private val amountRegex=Regex("(?i)(?:tk|bdt|৳)\\s*[:=]?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)")
     private val excludedContext=Regex("(?i)(fee|charge|balance|cashback|ফি|চার্জ|ব্যালেন্স|ক্যাশব্যাক)[^.;]{0,16}$")
     fun amountCandidates(body:String):List<String> {
@@ -69,6 +73,12 @@ object FormatAnalyzer {
             else -> ParseStatus.PARTIAL
         }
         return FormatAnalysis(amounts,ids,null,rule.incomingKeywords.filter { SmsText.normalized(body).contains(it,true) },status,warnings)
+    }
+    fun timestampCandidate(body:String):String? {
+        val instants=isoTimestamp.findAll(SmsText.normalized(body)).mapNotNull { match ->
+            runCatching { Instant.parse(match.value).truncatedTo(ChronoUnit.MILLIS) }.getOrNull()
+        }.distinct().toList()
+        return instants.singleOrNull()?.let { DateTimeFormatterBuilder().appendInstant(3).toFormatter().format(it) }
     }
     fun parseMinor(value:String):Long?=try {
         val decimal=BigDecimal(value.replace(",",""));if(decimal.scale()>2||decimal<=BigDecimal.ZERO)null else decimal.movePointRight(2).longValueExact()

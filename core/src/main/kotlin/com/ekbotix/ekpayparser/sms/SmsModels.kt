@@ -12,7 +12,30 @@ enum class ParseStatus {
 }
 
 enum class TransactionDirection { INCOMING, OUTGOING, REFUND_OR_REVERSAL, AUTHENTICATION, PROMOTIONAL, BALANCE_ONLY, UNKNOWN }
-enum class SenderRegistryState { UNVERIFIED, OBSERVED, APPROVED, DISABLED }
+enum class RegistryState { UNVERIFIED, OBSERVED, INTERNAL_APPROVED, DISABLED }
+enum class AcquisitionSource { SMS_RECEIVER, SMS_INBOX_RECOVERY, NOTIFICATION_LISTENER, SYNTHETIC_TEST }
+
+data class AcquiredPaymentMessage(
+    val source: AcquisitionSource,
+    val sourceIdentity: String,
+    val body: String,
+    val observedAt: Long,
+    val title: String? = null
+)
+
+data class NormalizedPaymentEvidence(
+    val provider: String,
+    val transactionId: String,
+    val amountMinor: Long,
+    val currency: String,
+    val providerTimestamp: String?,
+    val localObservedAt: Long,
+    val receiverReference: String?,
+    val senderReference: String?,
+    val messageHash: String,
+    val parserVersion: String,
+    val acquisitionSource: AcquisitionSource
+)
 
 data class SmsMessageInput(
     val sender: String,

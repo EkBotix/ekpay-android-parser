@@ -11,10 +11,19 @@ import java.util.concurrent.TimeUnit
 
 interface ParserApi { fun pair(body: ByteArray): ApiReply; fun send(request: SignedRequest): ApiReply }
 class SandboxApi(private val baseUrl: String, private val enabled: Boolean, private val debug: Boolean,
-    private val client: OkHttpClient = secureClient()) : ParserApi {
+    private val client: OkHttpClient = secureClient(debug)) : ParserApi {
     companion object {
-        fun secureClient() = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS)
-            .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
+        fun secureClient(debug: Boolean): OkHttpClient {
+            val builder = OkHttpClient.Builder().connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS).readTimeout(15, java.util.concurrent.TimeUnit.SECONDS).callTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+            if (debug) {
+                builder.hostnameVerifier(javax.net.ssl.HostnameVerifier { hostname, session ->
+                    if (hostname == "127.0.0.1" || hostname == "localhost") true
+                    else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
+                })
+            }
+            return builder.build()
+        }
         fun validateUrl(url: String, debug: Boolean) {
             val uri = URI(url)
             require(debug && uri.scheme == "https" && uri.host in setOf("localhost", "127.0.0.1", "10.0.2.2")) { "Only HTTPS disposable loopback sandbox is supported" }

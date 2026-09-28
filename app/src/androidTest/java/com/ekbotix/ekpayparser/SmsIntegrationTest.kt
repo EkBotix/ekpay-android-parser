@@ -14,6 +14,10 @@ import com.ekbotix.ekpayparser.repository.ParserRepository
 import com.ekbotix.ekpayparser.storage.DeviceState
 import com.ekbotix.ekpayparser.storage.SecureVault
 import com.ekbotix.ekpayparser.workers.SmsWorkProcessor
+import com.ekbotix.ekpayparser.acquisition.InternalProviderRegistry
+import com.ekbotix.ekpayparser.acquisition.PaymentEvidenceProcessor
+import com.ekbotix.ekpayparser.sms.AcquiredPaymentMessage
+import com.ekbotix.ekpayparser.sms.AcquisitionSource
 import java.util.Base64
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
@@ -123,5 +127,24 @@ class SmsIntegrationTest {
         assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_MULTI",redeliveryHash,"upay",now+2_000L),repository))
         assertEquals(3,db.queue().totalCount())
         assertEquals(3,db.queue().dedupeCount())
+    }
+
+    @Test fun sameTransactionAcrossReceiverInboxAndNotificationCreatesOneEvidence()=runBlocking {
+        assertTrue(repository.pair(device,0,"d".repeat(64)))
+        val registry=InternalProviderRegistry(vault)
+        registry.approveSender("INTERNAL_BKASH","bkash",1)
+        registry.approvePackage("internal.test.bkash","bkash",1)
+        val processor=PaymentEvidenceProcessor(repository,registry)
+        val body="Payment received Tk 10.50. TxnId: CROSS123 2026-09-28T01:02:03.000Z"
+        val now=System.currentTimeMillis()
+        val sources=listOf(
+            AcquiredPaymentMessage(AcquisitionSource.SMS_RECEIVER,"INTERNAL_BKASH",body,now),
+            AcquiredPaymentMessage(AcquisitionSource.SMS_INBOX_RECOVERY,"INTERNAL_BKASH",body,now+1_000),
+            AcquiredPaymentMessage(AcquisitionSource.NOTIFICATION_LISTENER,"internal.test.bkash",body,now+2_000)
+        )
+        val outcomes=sources.map { processor.process(it) }
+        assertEquals(outcomes.toString(),listOf(true,false,false),outcomes.map { it.queued })
+        assertEquals(1,db.queue().totalCount());assertEquals(1,db.queue().dedupeCount())
+        assertEquals("SMS_RECEIVER",db.queue().recentEvidence().single().acquisitionSource)
     }
 }

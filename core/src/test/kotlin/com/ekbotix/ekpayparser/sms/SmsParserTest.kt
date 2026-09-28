@@ -21,7 +21,7 @@ class SmsParserTest {
         }
         assertEquals(50050L,parse(cases[0].first,cases[0].second).amountMinor)
         assertEquals(ParseStatus.UNSUPPORTED_SENDER,parse("bKash","You have received Tk 1.00. TxnId: TEST_X").status)
-        assertEquals(SenderRegistryState.UNVERIFIED,SenderRegistry.state("bKash"))
+        assertEquals(RegistryState.UNVERIFIED,SenderRegistry.state("bKash"))
     }
 
     @Test fun amountSelectionRejectsAmbiguityButExcludesFeeAndBalance() {
@@ -73,5 +73,31 @@ class SmsParserTest {
         assertEquals("01712345678",SenderRegistry.normalize("01712 345678"))
         assertNotEquals(SenderRegistry.normalize("01712345678"),SenderRegistry.normalize("+8801712345678"))
         assertEquals("TEST_BKASH",SenderRegistry.normalize("test_bkash"))
+    }
+
+    @Test fun providerTimestampMustBeOneValidInstantAndIsCanonicalized() {
+        assertEquals("2026-09-27T19:02:03.000Z",FormatAnalyzer.timestampCandidate("2026-09-28T01:02:03+06:00"))
+        assertNull(FormatAnalyzer.timestampCandidate("2026-19-39T29:99:99Z"))
+        assertNull(FormatAnalyzer.timestampCandidate("2026-09-28T01:02:03Z 2026-09-28T01:02:04Z"))
+    }
+
+    @Test fun everyProviderRejectsUnsafeTypesAndHandlesWhitespaceUnicodeAndDuplicatesDeterministically() {
+        val providers=listOf(
+            Triple("bkash","TEST_BKASH","TxnId"),Triple("nagad","TEST_NAGAD","TxnId"),
+            Triple("rocket","TEST_ROCKET","TxnId"),Triple("upay","TEST_UPAY","TrxId")
+        )
+        providers.forEach { (_,sender,label) ->
+            val incoming="  Payment\u00a0received\nTk 12.50. $label: TEST_SAFE1 2026-09-28T01:02:03.000Z "
+            val first=parse(sender,incoming);val duplicate=parse(sender,incoming)
+            assertEquals(ParseStatus.PARSED,first.status);assertEquals(1250L,first.amountMinor)
+            assertEquals("2026-09-28T01:02:03.000Z",first.providerTimestamp);assertEquals(first.messageHash,duplicate.messageHash)
+            listOf(
+                "Money sent Tk 1.00 $label: TEST_OUT", "Cash out Tk 1.00 $label: TEST_CASH",
+                "OTP 123456 do not share", "Current balance Tk 1.00", "Cashback offer Tk 1.00",
+                "Payment refunded Tk 1.00 $label: TEST_REF", "Payment failed Tk 1.00 $label: TEST_FAIL"
+            ).forEach { unsafe -> assertNotEquals(ParseStatus.PARSED,parse(sender,unsafe).status) }
+            assertEquals(ParseStatus.INVALID,parse(sender,"Payment received Tk 1.234. $label: TEST_BAD").status)
+            assertEquals(ParseStatus.AMBIGUOUS,parse(sender,"Payment received Tk 1.00 and Tk 2.00. $label: TEST_TWO").status)
+        }
     }
 }

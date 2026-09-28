@@ -23,7 +23,7 @@ class SandboxIntegrationTest {
         val tm=TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply{init(trust)}.trustManagers.filterIsInstance<X509TrustManager>().single()
         val tls=SSLContext.getInstance("TLS").apply{init(null,arrayOf(tm),null)}
         // Trust this exact generated CA; keep standard TLS hostname verification. Never trust-all.
-        val client=SandboxApi.secureClient().newBuilder().sslSocketFactory(tls.socketFactory,tm).build()
+        val client=SandboxApi.secureClient(true).newBuilder().sslSocketFactory(tls.socketFactory,tm).build()
         val api=SandboxApi(base!!,true,true,client)
         fun control(path:String,body:String="{}"):com.google.gson.JsonObject {
             val request=Request.Builder().url(base+path).post(body.toRequestBody("application/json".toMediaType())).build()

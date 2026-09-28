@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
-import androidx.work.*
-import com.ekbotix.ekpayparser.workers.SmsProcessingWorker
+import com.ekbotix.ekpayparser.ParserApplication
+import kotlinx.coroutines.*
 
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -19,31 +19,19 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val pipeline = SmsParserPipeline(listOf(BkashSmsParser(), NagadSmsParser(), RocketSmsParser(), UpaySmsParser()))
         val parts=messages.map { SmsPart(it.originatingAddress,it.messageBody,it.timestampMillis) }
         val message=MultipartAssembler.assemble(parts)
         if(message==null) {
             ReceiverTelemetry.record(null,"",messages.size,System.currentTimeMillis(),ParseStatus.INVALID,hasSubscriptionMetadata)
             return
         }
-        val result=pipeline.process(message)
-        ReceiverTelemetry.record(message.sender,message.body,messages.size,message.receivedAt,result.status,hasSubscriptionMetadata)
-
-        if (result.status == ParseStatus.PARSED && result.transactionId != null && result.provider != null && result.amountMinor != null && result.providerTimestamp != null) {
-                val inputData = workDataOf(
-                    "provider" to result.provider,
-                    "transactionId" to result.transactionId,
-                    "amountMinor" to result.amountMinor,
-                    "messageHash" to (result.messageHash ?: ""),
-                    "receivedAt" to message.receivedAt,
-                    "providerTimestamp" to result.providerTimestamp
-                )
-
-                val workRequest = OneTimeWorkRequestBuilder<SmsProcessingWorker>()
-                    .setInputData(inputData)
-                    .build()
-
-                WorkManager.getInstance(context).enqueue(workRequest)
+        val pending=goAsync()
+        CoroutineScope(SupervisorJob()+Dispatchers.IO).launch {
+            try {
+                val acquired=AcquiredPaymentMessage(AcquisitionSource.SMS_RECEIVER,message.sender,message.body,message.receivedAt)
+                val result=(context.applicationContext as ParserApplication).evidenceProcessor.process(acquired)
+                ReceiverTelemetry.record(message.sender,message.body,messages.size,message.receivedAt,result.status,hasSubscriptionMetadata)
+            } finally { pending.finish() }
         }
     }
 }

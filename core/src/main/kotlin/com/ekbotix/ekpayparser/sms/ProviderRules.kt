@@ -21,9 +21,9 @@ object ProviderRules {
     private fun rejectionPatterns()=setOf("fee","balance","cashback","refund","reversed","failed","cancelled")
 }
 
-data class SenderRegistryEntry(val provider:String,val normalizedSender:String,val state:SenderRegistryState,val evidence:String)
+data class SenderRegistryEntry(val provider:String,val normalizedSender:String,val state:RegistryState,val evidence:String)
 object SenderRegistry {
-    val testEntries=ProviderRules.all.flatMap { rule -> rule.testSenders.map { SenderRegistryEntry(rule.provider,it,SenderRegistryState.APPROVED,"synthetic test sender") } }
+    val testEntries=ProviderRules.all.flatMap { rule -> rule.testSenders.map { SenderRegistryEntry(rule.provider,it,RegistryState.INTERNAL_APPROVED,"synthetic test sender") } }
     val realEntries:List<SenderRegistryEntry> = emptyList() // Human-reviewed observations only; never inferred or auto-approved.
     fun normalize(sender:String):String {
         val trimmed=sender.trim()
@@ -33,5 +33,5 @@ object SenderRegistry {
         }
         return trimmed.uppercase()
     }
-    fun state(sender:String)= (testEntries+realEntries).firstOrNull { it.normalizedSender==normalize(sender) }?.state ?: SenderRegistryState.UNVERIFIED
+    fun state(sender:String)= (testEntries+realEntries).firstOrNull { it.normalizedSender==normalize(sender) }?.state ?: RegistryState.UNVERIFIED
 }

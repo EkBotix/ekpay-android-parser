@@ -1,0 +1,139 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "a5691a6634f4412cb22a9f379f3895e3",
+    "entities": [
+      {
+        "tableName": "queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ingestionId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `path` TEXT NOT NULL, `encryptedBody` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attempts` INTEGER NOT NULL, `nextAttempt` INTEGER NOT NULL, `status` TEXT NOT NULL, `safeError` TEXT, PRIMARY KEY(`ingestionId`))",
+        "fields": [
+          {
+            "fieldPath": "ingestionId",
+            "columnName": "ingestionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedBody",
+            "columnName": "encryptedBody",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttempt",
+            "columnName": "nextAttempt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "safeError",
+            "columnName": "safeError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ingestionId"
+          ]
+        }
+      },
+      {
+        "tableName": "sms_dedupe",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`provider` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `messageHash` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `amountMinor` INTEGER NOT NULL, `acquisitionSource` TEXT NOT NULL, `parserVersion` TEXT NOT NULL, `ingestionId` TEXT NOT NULL, PRIMARY KEY(`provider`, `transactionId`))",
+        "fields": [
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "messageHash",
+            "columnName": "messageHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinor",
+            "columnName": "amountMinor",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acquisitionSource",
+            "columnName": "acquisitionSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parserVersion",
+            "columnName": "parserVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ingestionId",
+            "columnName": "ingestionId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "provider",
+            "transactionId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a5691a6634f4412cb22a9f379f3895e3')"
+    ]
+  }
+}

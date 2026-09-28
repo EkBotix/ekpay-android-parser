@@ -14,11 +14,14 @@ rotation/old-key denial and revocation. Exact accepted nonce retry returns cache
 per Phase 6; reused nonce with changed ID/facts is rejected. DB final asserts one evidence
 and zero authoritative transactions. No hosted data/source/verification enabled.
 
-Manifest source and merged APK scans allow RECEIVE_SMS plus the framework-protected
-SMS_RECEIVED manifest receiver while rejecting READ_SMS, SEND_SMS, contacts/phone identifiers, cleartext,
+Phase 10 manifest tests allow RECEIVE_SMS, READ_SMS and boot scheduling for the internal
+build while rejecting SEND_SMS, contacts/calls/phone identifiers, location, cleartext,
 backups and unguarded exports. WorkManager's necessary boot/
 wake/foreground/scheduler declarations are reviewed separately, not mistaken for SMS access.
-Phase 9 instrumentation runs on the connected Vivo device and covers key storage, Room
+Instrumentation on the Vivo covers key storage, Room
 migration, atomic SMS queue/dedupe, retry and dedupe edge cases. A genuine carrier-delivered
 SMS was verified when the tested Vivo app was foregrounded/released. Realtime background
 delivery was deferred on that device; synthetic tests never establish runtime delivery.
+Phase 10 adds source-independent receiver/inbox/notification dedupe and migration 3-to-4
+coverage. Physical-device recovery/listener/boot/process-death results must remain
+UNVERIFIED when the device is not connected.

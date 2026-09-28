@@ -62,8 +62,9 @@ class ProtocolTest {
         for(status in listOf(400,404,409,413))assertEquals(Disposition.PERMANENT,RetryPolicy.classify(status,"request_conflict"))
         assertEquals(Disposition.ACCEPTED,RetryPolicy.classify(200,null));assertEquals(30000L,RetryPolicy.backoff(1));assertEquals(3600000L,RetryPolicy.backoff(8))
     }
-    @Test fun rejectsRealDataAndRemoteOrCleartextDestinations(){
-        assertThrows(IllegalArgumentException::class.java){Evidence("bkash","REAL_REFERENCE",1,Protocol.iso(System.currentTimeMillis()),"a".repeat(64))}
+    @Test fun acceptsNormalizedInternalReferencesButRejectsUnsafeDataAndDestinations(){
+        Evidence("bkash","REAL_REFERENCE",1,Protocol.iso(System.currentTimeMillis()),"a".repeat(64))
+        assertThrows(IllegalArgumentException::class.java){Evidence("bkash","lowercase",1,Protocol.iso(System.currentTimeMillis()),"a".repeat(64))}
         assertThrows(IllegalArgumentException::class.java){Evidence("bkash","TEST_NEGATIVE",-1,Protocol.iso(System.currentTimeMillis()),"a".repeat(64))}
         for(url in listOf("http://10.0.2.2:3000","https://example.com","https://user@localhost:3443","https://localhost:3443?secret=x"))assertThrows(IllegalArgumentException::class.java){SandboxApi.validateUrl(url,true)}
         SandboxApi.validateUrl("https://10.0.2.2:3443",true);assertThrows(IllegalArgumentException::class.java){SandboxApi.validateUrl("https://localhost:3443",false)}

@@ -28,12 +28,13 @@ class QueueMigrationTest {
             close()
         }
         val migrated=Room.databaseBuilder(context,QueueDatabase::class.java,name)
-            .addMigrations(ParserApplication.MIGRATION_2_3).build()
+            .addMigrations(ParserApplication.MIGRATION_2_3,ParserApplication.MIGRATION_3_4).build()
         try {
             assertEquals(1,migrated.queue().totalCount())
             assertEquals("encrypted",migrated.queue().all().single().encryptedBody)
             assertEquals(1,migrated.queue().dedupeCount())
             assertTrue(migrated.queue().hasDedupe("legacy:${"a".repeat(64)}","TEST_OLD","a".repeat(64)))
+            assertEquals("SYNTHETIC_TEST",migrated.queue().recentEvidence().single().acquisitionSource)
         } finally {
             migrated.close();context.deleteDatabase(name)
         }

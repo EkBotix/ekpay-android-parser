@@ -1,13 +1,11 @@
-# Android sandbox security boundary
+# Android internal parser security boundary
 
-No inbox/history access, contacts, phone/hardware identifiers or provider/account secrets.
-Phase 9 retains only RECEIVE_SMS for system-delivered events; READ_SMS, SEND_SMS and
-READ_PHONE_STATE remain absent. The exported receiver accepts only the framework-protected
-`android.provider.Telephony.SMS_RECEIVED` action; no experimental dynamic receiver or
-receiver-level permission plumbing remains. FLAG_SECURE remains enabled and there is no WebView. Merged library exports are limited to BIND_JOB_SERVICE-protected
-WorkManager scheduling and DUMP-protected diagnostics/profile receivers. Automated checks
-enforce this allowlist. Backup/cloud/device transfer excluded. No service/anon/API/HMAC backend keys
-in app/config. Test-only build marker cannot be switched to live.
+Phase 10 adds explicit `READ_SMS` for a 30-minute/100-row inbox-only recovery scan and
+`RECEIVE_BOOT_COMPLETED` to schedule WorkManager. It still excludes SEND_SMS, contacts,
+call logs, phone identifiers and location. Notification access uses the system-protected
+listener binding and processes content only for manually approved packages. FLAG_SECURE,
+backup exclusions and the TEST-only build marker remain. No service/API/HMAC backend key is
+present in the app.
 
 Networking default-off; release URL blank/off; debug HTTPS destination restricted to host
 loopback localhost/127.0.0.1/emulator 10.0.2.2. System CA validation and hostname checks;

@@ -4,7 +4,7 @@ data class DeviceIdentity(val deviceId: String, val keyVersion: Int, val alias: 
 data class Evidence(val provider: String, val transactionId: String, val amountMinor: Long, val providerTimestamp: String, val receiverHash: String? = null, val senderHash: String? = null) {
     init {
         require(provider in setOf("bkash", "nagad", "rocket", "upay"))
-        require(transactionId.matches(Regex("^TEST_[A-Z0-9_-]{1,100}$")))
+        require(transactionId.matches(Regex("^[A-Z0-9][A-Z0-9._-]{0,127}$")))
         require(amountMinor in 1..9007199254740991L)
         require(receiverHash == null || receiverHash.matches(Regex("[a-f0-9]{64}")))
         require(senderHash == null || senderHash.matches(Regex("[a-f0-9]{64}")))

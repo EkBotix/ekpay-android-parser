@@ -7,7 +7,8 @@ data class QueueItem(@PrimaryKey val ingestionId: String, val deviceId: String, 
     val createdAt: Long, val attempts: Int=0, val nextAttempt: Long=0, val status: String="pending", val safeError: String?=null)
 
 @Entity(tableName="sms_dedupe", primaryKeys = ["provider", "transactionId"])
-data class DedupeItem(val provider: String, val transactionId: String, val messageHash: String, val receivedAt: Long)
+data class DedupeItem(val provider: String, val transactionId: String, val messageHash: String, val receivedAt: Long,
+    val amountMinor:Long=0, val acquisitionSource:String="SYNTHETIC_TEST", val parserVersion:String="legacy", val ingestionId:String="")
 
 @Dao interface QueueDao {
     @Insert(onConflict=OnConflictStrategy.ABORT) suspend fun add(item: QueueItem)
@@ -24,6 +25,7 @@ data class DedupeItem(val provider: String, val transactionId: String, val messa
     @Query("SELECT EXISTS(SELECT 1 FROM sms_dedupe WHERE (provider=:provider AND transactionId=:txn) OR messageHash=:hash)") suspend fun isDuplicate(provider: String, txn: String, hash: String): Boolean
     @Query("SELECT EXISTS(SELECT 1 FROM sms_dedupe WHERE provider=:provider AND transactionId=:txn AND messageHash=:hash)") suspend fun hasDedupe(provider: String, txn: String, hash: String): Boolean
     @Query("SELECT count(*) FROM sms_dedupe") suspend fun dedupeCount(): Int
+    @Query("SELECT * FROM sms_dedupe ORDER BY receivedAt DESC LIMIT 50") suspend fun recentEvidence():List<DedupeItem>
     @Query("DELETE FROM sms_dedupe WHERE receivedAt<:before") suspend fun pruneDedupe(before:Long)
 
     @Transaction
@@ -35,5 +37,5 @@ data class DedupeItem(val provider: String, val transactionId: String, val messa
         return true
     }
 }
-@Database(entities=[QueueItem::class, DedupeItem::class],version=3,exportSchema=true)
+@Database(entities=[QueueItem::class, DedupeItem::class],version=4,exportSchema=true)
 abstract class QueueDatabase:RoomDatabase(){ abstract fun queue():QueueDao }
