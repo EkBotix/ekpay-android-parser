@@ -21,7 +21,7 @@ object SmsSafety {
     private val authentication=setOf("otp","one-time password","one time password","verification code","authentication code","pin","code expires","do not share","login code","ওটিপি","যাচাইকরণ কোড","পিন","শেয়ার করবেন না","শেয়ার করবেন না")
     private val promotion=setOf("cashback","discount","offer","voucher","reward","campaign","promotional","ছাড়","অফার","ভাউচার","পুরস্কার","ক্যাশব্যাক")
     private val reversal=setOf("refund","refunded","reversal","reversed","failed","cancelled","canceled","ফেরত","ব্যর্থ","বাতিল")
-    private val outgoing=setOf("sent money","money sent","cash out","cash-out","payment made","টাকা পাঠানো","ক্যাশ আউট")
+    private val outgoing=setOf("sent money","money sent","cash out","cash-out","payment made","send money","payment of","টাকা পাঠানো","ক্যাশ আউট")
     private val balance=setOf("current balance","available balance","balance updated","বর্তমান ব্যালেন্স","ব্যালেন্স আপডেট")
     private val incoming=setOf("received","money received","cash in","payment received","পেয়েছেন","পেয়েছেন","টাকা গ্রহণ")
     fun direction(body:String):TransactionDirection {
@@ -72,13 +72,23 @@ object FormatAnalyzer {
             amounts.size==1 && ids.size==1 && direction==TransactionDirection.INCOMING -> ParseStatus.MANUAL_REVIEW
             else -> ParseStatus.PARTIAL
         }
-        return FormatAnalysis(amounts,ids,null,rule.incomingKeywords.filter { SmsText.normalized(body).contains(it,true) },status,warnings)
+        return FormatAnalysis(amounts,ids,timestampCandidate(body,rule),rule.incomingKeywords.filter { SmsText.normalized(body).contains(it,true) },status,warnings)
     }
-    fun timestampCandidate(body:String):String? {
-        val instants=isoTimestamp.findAll(SmsText.normalized(body)).mapNotNull { match ->
+    fun timestampCandidate(body:String,rule:ProviderRuleSet?=null):String? {
+        val text=SmsText.normalized(body)
+        val instants=isoTimestamp.findAll(text).mapNotNull { match ->
             runCatching { Instant.parse(match.value).truncatedTo(ChronoUnit.MILLIS) }.getOrNull()
-        }.distinct().toList()
-        return instants.singleOrNull()?.let { DateTimeFormatterBuilder().appendInstant(3).toFormatter().format(it) }
+        }.toMutableList()
+        if(rule!=null) {
+            val dtf = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(java.time.ZoneId.of("Asia/Dhaka"))
+            rule.timestampPatterns.forEach { p ->
+                instants.addAll(p.findAll(text).mapNotNull { m ->
+                    runCatching { Instant.from(dtf.parse(m.groupValues[1])).truncatedTo(ChronoUnit.MILLIS) }.getOrNull()
+                })
+            }
+        }
+        val distinct = instants.distinct().toList()
+        return distinct.singleOrNull()?.let { DateTimeFormatterBuilder().appendInstant(3).toFormatter().format(it) }
     }
     fun parseMinor(value:String):Long?=try {
         val decimal=BigDecimal(value.replace(",",""));if(decimal.scale()>2||decimal<=BigDecimal.ZERO)null else decimal.movePointRight(2).longValueExact()

@@ -21,7 +21,7 @@ class SmsParserTest {
         }
         assertEquals(50050L,parse(cases[0].first,cases[0].second).amountMinor)
         assertEquals(ParseStatus.UNSUPPORTED_SENDER,parse("bKash","You have received Tk 1.00. TxnId: TEST_X").status)
-        assertEquals(RegistryState.UNVERIFIED,SenderRegistry.state("bKash"))
+        assertEquals(RegistryState.OBSERVED,SenderRegistry.state("bKash"))
     }
 
     @Test fun amountSelectionRejectsAmbiguityButExcludesFeeAndBalance() {

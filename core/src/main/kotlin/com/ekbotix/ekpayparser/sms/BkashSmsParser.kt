@@ -21,7 +21,7 @@ abstract class RuleBasedSmsParser(private val rule:ProviderRuleSet):SmsProviderP
         if(!transactionId.matches(allowed))return ParseResult(ParseStatus.MANUAL_REVIEW,direction=direction,parserVersion=rule.parserVersion)
         val amountMinor=FormatAnalyzer.parseMinor(amounts.single()) ?: return ParseResult(ParseStatus.INVALID,direction=direction,parserVersion=rule.parserVersion)
         val hash=MessageDigest.getInstance("SHA-256").digest(message.body.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it)}
-        return ParseResult(ParseStatus.PARSED,rule.provider,transactionId,amountMinor,"BDT",providerTimestamp=FormatAnalyzer.timestampCandidate(message.body),localReceivedAt=message.receivedAt,messageHash=hash,parserVersion=rule.parserVersion,direction=direction)
+        return ParseResult(ParseStatus.PARSED,rule.provider,transactionId,amountMinor,"BDT",providerTimestamp=FormatAnalyzer.timestampCandidate(message.body, rule),localReceivedAt=message.receivedAt,messageHash=hash,parserVersion=rule.parserVersion,direction=direction)
     }
 
     fun provider()=rule.provider

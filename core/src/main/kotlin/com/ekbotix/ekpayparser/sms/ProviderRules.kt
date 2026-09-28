@@ -13,7 +13,7 @@ data class ProviderRuleSet(
 )
 
 object ProviderRules {
-    val bkash=ProviderRuleSet("bkash",setOf("TEST_BKASH"),setOf("received"),setOf("tk","bdt","৳"),setOf("txnid"),rejectionPatterns=rejectionPatterns(),parserVersion="bkash-test-v2")
+    val bkash=ProviderRuleSet("bkash",setOf("TEST_BKASH"),setOf("received","cash in"),setOf("tk","bdt","৳"),setOf("trxid","txnid"),timestampPatterns=listOf(Regex("\\b([0-3][0-9]/[01][0-9]/20[0-9]{2} [0-2][0-9]:[0-5][0-9])\\b")),rejectionPatterns=rejectionPatterns(),parserVersion="bkash-v3")
     val nagad=ProviderRuleSet("nagad",setOf("TEST_NAGAD"),setOf("received"),setOf("amount","tk","bdt","৳"),setOf("txnid"),rejectionPatterns=rejectionPatterns(),parserVersion="nagad-test-v2")
     val rocket=ProviderRuleSet("rocket",setOf("TEST_ROCKET"),setOf("received"),setOf("tk","bdt","৳"),setOf("txnid"),rejectionPatterns=rejectionPatterns(),parserVersion="rocket-test-v2")
     val upay=ProviderRuleSet("upay",setOf("TEST_UPAY"),setOf("received"),setOf("tk","bdt","৳"),setOf("trxid"),rejectionPatterns=rejectionPatterns(),parserVersion="upay-test-v2")
@@ -24,7 +24,7 @@ object ProviderRules {
 data class SenderRegistryEntry(val provider:String,val normalizedSender:String,val state:RegistryState,val evidence:String)
 object SenderRegistry {
     val testEntries=ProviderRules.all.flatMap { rule -> rule.testSenders.map { SenderRegistryEntry(rule.provider,it,RegistryState.INTERNAL_APPROVED,"synthetic test sender") } }
-    val realEntries:List<SenderRegistryEntry> = emptyList() // Human-reviewed observations only; never inferred or auto-approved.
+    val realEntries:List<SenderRegistryEntry> = listOf(SenderRegistryEntry("bkash", "BKASH", RegistryState.OBSERVED, "manually observed SMS formatting"))
     fun normalize(sender:String):String {
         val trimmed=sender.trim()
         if(trimmed.matches(Regex("[+0-9 ()-]+"))) {
