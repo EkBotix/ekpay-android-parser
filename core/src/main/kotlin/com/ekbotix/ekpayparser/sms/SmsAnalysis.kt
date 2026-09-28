@@ -21,7 +21,7 @@ object SmsSafety {
     private val authentication=setOf("otp","one-time password","one time password","verification code","authentication code","pin","code expires","do not share","login code","ওটিপি","যাচাইকরণ কোড","পিন","শেয়ার করবেন না","শেয়ার করবেন না")
     private val promotion=setOf("cashback","discount","offer","voucher","reward","campaign","promotional","ছাড়","অফার","ভাউচার","পুরস্কার","ক্যাশব্যাক")
     private val reversal=setOf("refund","refunded","reversal","reversed","failed","cancelled","canceled","ফেরত","ব্যর্থ","বাতিল")
-    private val outgoing=setOf("sent money","money sent","cash out","cash-out","payment made","send money","payment of","টাকা পাঠানো","ক্যাশ আউট")
+    private val outgoing=setOf("sent money","money sent","cash out","cash-out","payment made","send money","payment of","paid to","mobile recharge","recharge","টাকা পাঠানো","ক্যাশ আউট")
     private val balance=setOf("current balance","available balance","balance updated","বর্তমান ব্যালেন্স","ব্যালেন্স আপডেট")
     private val incoming=setOf("received","money received","cash in","payment received","পেয়েছেন","পেয়েছেন","টাকা গ্রহণ")
     fun direction(body:String):TransactionDirection {
@@ -40,7 +40,7 @@ object SmsSafety {
 
 object FormatAnalyzer {
     private val isoTimestamp=Regex("\\b20[0-9]{2}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{3})?(?:Z|[+-][0-2][0-9]:[0-5][0-9])\\b")
-    private val amountRegex=Regex("(?i)(?:tk|bdt|৳)\\s*[:=]?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)")
+    private val amountRegex=Regex("(?i)(?:tk|bdt|৳)\\.?\\s*[:=]?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)")
     private val excludedContext=Regex("(?i)(fee|charge|balance|cashback|ফি|চার্জ|ব্যালেন্স|ক্যাশব্যাক)[^.;]{0,16}$")
     fun amountCandidates(body:String):List<String> {
         val text=SmsText.normalized(body)
@@ -80,10 +80,13 @@ object FormatAnalyzer {
             runCatching { Instant.parse(match.value).truncatedTo(ChronoUnit.MILLIS) }.getOrNull()
         }.toMutableList()
         if(rule!=null) {
-            val dtf = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(java.time.ZoneId.of("Asia/Dhaka"))
+            val dtf1 = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(java.time.ZoneId.of("Asia/Dhaka"))
+            val dtf2 = java.time.format.DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MMM-yy hh:mm:ss a").toFormatter().withZone(java.time.ZoneId.of("Asia/Dhaka"))
             rule.timestampPatterns.forEach { p ->
                 instants.addAll(p.findAll(text).mapNotNull { m ->
-                    runCatching { Instant.from(dtf.parse(m.groupValues[1])).truncatedTo(ChronoUnit.MILLIS) }.getOrNull()
+                    runCatching { Instant.from(dtf1.parse(m.groupValues[1])) }
+                        .recoverCatching { Instant.from(dtf2.parse(m.groupValues[1])) }
+                        .getOrNull()?.truncatedTo(ChronoUnit.MILLIS)
                 })
             }
         }

@@ -15,8 +15,8 @@ data class ProviderRuleSet(
 object ProviderRules {
     val bkash=ProviderRuleSet("bkash",setOf("TEST_BKASH"),setOf("received","cash in"),setOf("tk","bdt","৳"),setOf("trxid","txnid"),timestampPatterns=listOf(Regex("\\b([0-3][0-9]/[01][0-9]/20[0-9]{2} [0-2][0-9]:[0-5][0-9])\\b")),rejectionPatterns=rejectionPatterns(),parserVersion="bkash-v3")
     val nagad=ProviderRuleSet("nagad",setOf("TEST_NAGAD"),setOf("received","cash in"),setOf("amount","tk","bdt","৳"),setOf("txnid"),timestampPatterns=listOf(Regex("\\b([0-3][0-9]/[01][0-9]/20[0-9]{2} [0-2][0-9]:[0-5][0-9])\\b")),rejectionPatterns=rejectionPatterns(),parserVersion="nagad-v3")
-    val rocket=ProviderRuleSet("rocket",setOf("TEST_ROCKET"),setOf("received"),setOf("tk","bdt","৳"),setOf("txnid"),rejectionPatterns=rejectionPatterns(),parserVersion="rocket-test-v2")
-    val upay=ProviderRuleSet("upay",setOf("TEST_UPAY"),setOf("received"),setOf("tk","bdt","৳"),setOf("trxid"),rejectionPatterns=rejectionPatterns(),parserVersion="upay-test-v2")
+    val rocket=ProviderRuleSet("rocket",setOf("TEST_ROCKET"),setOf("received"),setOf("tk","bdt","৳"),setOf("txnid"),rejectionPatterns=rejectionPatterns(),timestampPatterns=listOf(Regex("(?i)\\b([0-3][0-9]-[a-z]{3}-[0-9]{2} [01][0-9]:[0-5][0-9]:[0-5][0-9] [ap]m)\\b")),parserVersion="rocket-v3")
+    val upay=ProviderRuleSet("upay",setOf("TEST_UPAY"),setOf("received"),setOf("tk","bdt","৳"),setOf("trxid"),rejectionPatterns=rejectionPatterns(),timestampPatterns=listOf(Regex("\\b([0-3][0-9]/[01][0-9]/20[0-9]{2} [0-2][0-9]:[0-5][0-9])\\b")),parserVersion="upay-v3")
     val all=listOf(bkash,nagad,rocket,upay)
     private fun rejectionPatterns()=setOf("fee","balance","cashback","refund","reversed","failed","cancelled")
 }
@@ -24,7 +24,7 @@ object ProviderRules {
 data class SenderRegistryEntry(val provider:String,val normalizedSender:String,val state:RegistryState,val evidence:String)
 object SenderRegistry {
     val testEntries=ProviderRules.all.flatMap { rule -> rule.testSenders.map { SenderRegistryEntry(rule.provider,it,RegistryState.INTERNAL_APPROVED,"synthetic test sender") } }
-    val realEntries:List<SenderRegistryEntry> = listOf(SenderRegistryEntry("bkash", "BKASH", RegistryState.OBSERVED, "manually observed SMS formatting"), SenderRegistryEntry("nagad", "NAGAD", RegistryState.OBSERVED, "manually observed SMS formatting"))
+    val realEntries:List<SenderRegistryEntry> = listOf(SenderRegistryEntry("bkash", "BKASH", RegistryState.OBSERVED, "manually observed SMS formatting"), SenderRegistryEntry("nagad", "NAGAD", RegistryState.OBSERVED, "manually observed SMS formatting"), SenderRegistryEntry("rocket", "16216", RegistryState.OBSERVED, "manually observed SMS formatting"), SenderRegistryEntry("upay", "UPAY", RegistryState.OBSERVED, "manually observed SMS formatting"))
     fun normalize(sender:String):String {
         val trimmed=sender.trim()
         if(trimmed.matches(Regex("[+0-9 ()-]+"))) {
