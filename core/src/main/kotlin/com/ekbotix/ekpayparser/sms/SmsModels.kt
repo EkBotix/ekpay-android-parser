@@ -6,8 +6,13 @@ enum class ParseStatus {
     PARSED,
     PARTIAL,
     INVALID,
-    AMBIGUOUS
+    AMBIGUOUS,
+    UNSUPPORTED_TYPE,
+    MANUAL_REVIEW
 }
+
+enum class TransactionDirection { INCOMING, OUTGOING, REFUND_OR_REVERSAL, AUTHENTICATION, PROMOTIONAL, BALANCE_ONLY, UNKNOWN }
+enum class SenderRegistryState { UNVERIFIED, OBSERVED, APPROVED, DISABLED }
 
 data class SmsMessageInput(
     val sender: String,
@@ -26,5 +31,9 @@ data class ParseResult(
     val providerTimestamp: String? = null,
     val localReceivedAt: Long? = null,
     val messageHash: String? = null,
-    val parserVersion: String = "ekpay-sms-parser-v1"
+    val parserVersion: String = "ekpay-sms-parser-v2",
+    val direction: TransactionDirection = TransactionDirection.UNKNOWN
 )
+
+data class SmsPart(val sender:String?,val body:String?,val timestamp:Long)
+data class FormatAnalysis(val amountCandidates:List<String>,val transactionIdCandidates:List<String>,val timestampCandidate:String?,val keywords:List<String>,val status:ParseStatus,val warnings:List<String>)

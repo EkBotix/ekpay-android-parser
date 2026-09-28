@@ -23,8 +23,8 @@ internal object SmsWorkProcessor {
 
         val msgHash = inputData.getString("messageHash") ?: ""
         val receivedAt = inputData.getLong("receivedAt", System.currentTimeMillis())
-        val providerTimestampStr = inputData.getString("providerTimestamp")
-        val providerTimestamp = if (providerTimestampStr.isNullOrEmpty()) Protocol.iso(receivedAt) else providerTimestampStr
+        val providerTimestamp = inputData.getString("providerTimestamp")?.takeIf { it.isNotBlank() }
+            ?: return ListenableWorker.Result.failure()
 
         val evidence = Evidence(
             provider = provider,

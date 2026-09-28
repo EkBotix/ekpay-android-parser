@@ -58,19 +58,14 @@ class ParserViewModel(application:Application):AndroidViewModel(application){
     fun sync()=run {repository.sync();state=repository.state.load();queue=repository.queue.all();message=state.summary}
     fun settings(consent:Boolean,logging:Boolean)=run {repository.settings(consent,logging);state=repository.state.load()}
     fun stop()=run {repository.markRevoked();state=repository.state.load();queue=repository.queue.all();message="Local terminal stop."}
-    fun injectSms(context: android.content.Context, sender: String, body: String) {
-        val inputData = androidx.work.workDataOf(
-            "sender" to sender,
-            "body" to body,
-            "receivedAt" to System.currentTimeMillis()
-        )
-        val request = androidx.work.OneTimeWorkRequestBuilder<com.ekbotix.ekpayparser.workers.SmsProcessingWorker>().setInputData(inputData).build()
-        androidx.work.WorkManager.getInstance(context).enqueue(request)
-        message = "Injected synthetic SMS to worker"
+    fun analyzeSyntheticSms(sender:String,body:String) {
+        val result=SmsParserPipeline(listOf(BkashSmsParser(),NagadSmsParser(),RocketSmsParser(),UpaySmsParser()))
+            .process(SmsMessageInput(sender,body,System.currentTimeMillis()))
+        message="Synthetic in-memory parser status: ${result.status}. No receiver claim or network enqueue."
     }
 }
 class MainActivity:ComponentActivity(){
-    override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);ReceiverTelemetry.lifecycle("MAIN_ACTIVITY_CREATED",System.currentTimeMillis());window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         setContent {MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF157A68),surface=Color(0xFFF5F8F7))){ParserScreen()}}}
 }
 @Composable private fun ParserScreen(vm:ParserViewModel=viewModel()){
@@ -79,9 +74,10 @@ class MainActivity:ComponentActivity(){
     Surface(Modifier.fillMaxSize()) {Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(20.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
         Text("EkPay Parser",style=MaterialTheme.typography.headlineMedium)
         Text("TEST MODE / SANDBOX",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
-        Text("Synthetic data only · No SMS permission · No real payment verification",style=MaterialTheme.typography.bodySmall)
+        Text("Sandbox only · RECEIVE_SMS only · No inbox scan or real payment verification",style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Status","Pair","Evidence").forEach{s->OutlinedButton(onClick={screen=s}){Text(s)}}}
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("Queue","Diagnostics","Settings","SMS Detection").forEach{s->TextButton(onClick={screen=s}){Text(s)}}}
+        if(BuildConfig.DEBUG)TextButton(onClick={screen="Format Lab"}){Text("Format Lab (debug)")}
         if(vm.busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(vm.message,style=MaterialTheme.typography.bodyMedium)
         if(screen=="Status"||screen=="Diagnostics"){
@@ -99,6 +95,7 @@ class MainActivity:ComponentActivity(){
             "SMS Detection"->{
                 val context = LocalContext.current
                 var hasSmsPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED) }
+                var telemetryRefresh by remember { mutableIntStateOf(0) }
                 val requestPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasSmsPermission = it }
                 Text("SMS Detection",style=MaterialTheme.typography.titleLarge)
                 Text("EkPay Parser detects supported payment notification SMS. It ignores unsupported senders, does not send SMS, does not upload unrelated SMS, does not store the full inbox, and sends only normalized payment evidence.")
@@ -108,16 +105,39 @@ class MainActivity:ComponentActivity(){
                     var body by remember{mutableStateOf("You have received Tk 150.00 from 017XXXX. TxnId: TEST_X1Y2Z3")}
                     OutlinedTextField(sender,{sender=it},label={Text("Test Sender")})
                     OutlinedTextField(body,{body=it},label={Text("Test SMS Body")},modifier=Modifier.fillMaxWidth())
-                    Button(onClick={vm.injectSms(context, sender, body)},enabled=canSend){Text("Inject Synthetic SMS")}
+                    Button(onClick={vm.analyzeSyntheticSms(sender,body)}){Text("Analyze synthetic sample in memory")}
+                    if(BuildConfig.DEBUG){
+                        Text("Genuine receiver observation (debug only)",style=MaterialTheme.typography.titleMedium)
+                        key(telemetryRefresh){Text(ReceiverTelemetry.summary())}
+                        OutlinedButton(onClick={telemetryRefresh++}){Text("Refresh receiver telemetry")}
+                    }
                 } else {
                     Button(onClick={ requestPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) }) {
                         Text("Enable SMS Detection")
                     }
                 }
             }
+            "Format Lab"->{if(BuildConfig.DEBUG)FormatLab() else Text("Format Lab is disabled in release")}
             else->{Text(if(identity==null)"Not paired" else "Device status",style=MaterialTheme.typography.titleLarge);Text("Status: ${identity?.state?:"not paired"}");Text("Public device ID: ${identity?.deviceId?:"Not assigned"}");Text("Environment: TEST · Protocol: 1");Text("Key version: ${identity?.keyVersion?:0} · App: ${BuildConfig.VERSION_NAME}");Text("Provider/account: synthetic backend binding; never caller-selected");Text("Last sync: ${vm.state.lastSuccess?.let(Protocol::iso)?:"Never"}");Text("Pending queue: ${vm.queue.count {it.status=="pending"}}");Button(onClick={vm.heartbeat()},enabled=canSend){Text("Send Test Heartbeat")};OutlinedButton(onClick={vm.stop()},enabled=identity!=null && identity.state!="revoked" && !vm.busy){Text("Stop locally / mark revoked")};Text("Generic 401 pauses every retry; it does not prove remote revocation. Revoked/key-loss identities never automatically reactivate.")}
         }
     }}
+}
+@Composable private fun FormatLab(){
+    var provider by remember{mutableStateOf("bkash")};var sample by remember{mutableStateOf("")};var analysis by remember{mutableStateOf<FormatAnalysis?>(null)}
+    Text("Format Lab · DEBUG ONLY",style=MaterialTheme.typography.titleLarge)
+    Text("Paste a manually redacted sample. It stays in memory and is not logged, persisted, or uploaded.")
+    Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf("bkash","nagad","rocket","upay").forEach { value -> TextButton(onClick={provider=value;analysis=null}){Text(value)} }}
+    Text("Provider: $provider · real format state: UNVERIFIED")
+    OutlinedTextField(sample,{sample=it;analysis=null},label={Text("Redacted SMS structure")},modifier=Modifier.fillMaxWidth(),minLines=4)
+    Button(onClick={analysis=FormatAnalyzer.analyze(provider,sample)},enabled=sample.isNotBlank()){Text("Analyze locally")}
+    analysis?.let { result ->
+        Text("Status: ${result.status}")
+        Text("Amount candidates: ${result.amountCandidates.joinToString().ifBlank{"None"}}")
+        Text("Transaction ID candidates: ${result.transactionIdCandidates.joinToString().ifBlank{"None"}}")
+        Text("Provider timestamp: ${result.timestampCandidate?:"Not deterministically available"}")
+        Text("Keywords: ${result.keywords.joinToString().ifBlank{"None"}}")
+        result.warnings.forEach{Text("Warning: $it")}
+    }
 }
 @Composable private fun PairForm(vm:ParserViewModel){
     var device by remember{mutableStateOf("")};var token by remember{mutableStateOf("")};var version by remember{mutableStateOf(vm.state.identity?.keyVersion?.toString()?:"0")}

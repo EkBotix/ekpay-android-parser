@@ -6,10 +6,16 @@ Android Studio compatible, Gradle 8.13/AGP 8.13.2, JDK 17. No GitHub publication
 
 Capabilities: secure local identity, test pairing/dashboard re-pair rotation, Ed25519
 signing, signed heartbeat, synthetic evidence generator, Room encrypted payload queue,
-WorkManager retry, status/queue/diagnostics/settings screens and shared Node/Kotlin vectors.
+WorkManager retry, sandbox `RECEIVE_SMS` receiver, debug-only Format Lab/safe receiver
+telemetry, and explicit synthetic TEST_* provider rules.
 
-NOT implemented: SMS reading/permissions, notification reader, real payment ingestion,
-provider API, production verification, commercial service or live deployment.
+NOT implemented: inbox/history reading, production sender activation, verified real provider
+formats, real payment ingestion, provider API, production verification or live deployment.
+The app requests RECEIVE_SMS only; READ_SMS, SEND_SMS and READ_PHONE_STATE are absent.
+SMS observation is best-effort: the tested vivo V2425A/API 36 device deferred manifest
+delivery while the cached app process was frozen. The foreground/released path is verified,
+but absence of SMS evidence never proves payment failure. Production provider formats and
+senders remain disabled and unverified.
 
 Every screen displays TEST MODE/SANDBOX. All references must start TEST_; optional sender
 reference also TEST_ and hashed. No phone/hardware identifiers. No production destination

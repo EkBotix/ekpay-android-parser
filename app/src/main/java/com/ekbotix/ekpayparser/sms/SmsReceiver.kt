@@ -9,30 +9,34 @@ import com.ekbotix.ekpayparser.workers.SmsProcessingWorker
 
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        ReceiverTelemetry.entry(intent.action,System.currentTimeMillis())
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-        if (messages.isNullOrEmpty()) return
+        val hasSubscriptionMetadata=intent.hasExtra("subscription")||intent.hasExtra("subscription_id")||intent.hasExtra("slot")||intent.hasExtra("slot_id")
+        if (messages.isNullOrEmpty()) {
+            ReceiverTelemetry.record(null,"",0,System.currentTimeMillis(),ParseStatus.INVALID,hasSubscriptionMetadata)
+            return
+        }
 
-        val groupedMessages = messages.groupBy { it.originatingAddress }
         val pipeline = SmsParserPipeline(listOf(BkashSmsParser(), NagadSmsParser(), RocketSmsParser(), UpaySmsParser()))
+        val parts=messages.map { SmsPart(it.originatingAddress,it.messageBody,it.timestampMillis) }
+        val message=MultipartAssembler.assemble(parts)
+        if(message==null) {
+            ReceiverTelemetry.record(null,"",messages.size,System.currentTimeMillis(),ParseStatus.INVALID,hasSubscriptionMetadata)
+            return
+        }
+        val result=pipeline.process(message)
+        ReceiverTelemetry.record(message.sender,message.body,messages.size,message.receivedAt,result.status,hasSubscriptionMetadata)
 
-        groupedMessages.forEach { (sender, msgs) ->
-            if (sender == null) return@forEach
-            val body = msgs.joinToString("") { it.messageBody ?: "" }
-            val receivedAt = msgs.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
-
-            val message = SmsMessageInput(sender, body, receivedAt)
-            val result = pipeline.process(message)
-
-            if (result.status == ParseStatus.PARSED && result.transactionId != null && result.provider != null && result.amountMinor != null) {
+        if (result.status == ParseStatus.PARSED && result.transactionId != null && result.provider != null && result.amountMinor != null && result.providerTimestamp != null) {
                 val inputData = workDataOf(
                     "provider" to result.provider,
                     "transactionId" to result.transactionId,
                     "amountMinor" to result.amountMinor,
                     "messageHash" to (result.messageHash ?: ""),
-                    "receivedAt" to receivedAt,
-                    "providerTimestamp" to (result.providerTimestamp ?: "")
+                    "receivedAt" to message.receivedAt,
+                    "providerTimestamp" to result.providerTimestamp
                 )
 
                 val workRequest = OneTimeWorkRequestBuilder<SmsProcessingWorker>()
@@ -40,7 +44,6 @@ class SmsReceiver : BroadcastReceiver() {
                     .build()
 
                 WorkManager.getInstance(context).enqueue(workRequest)
-            }
         }
     }
 }

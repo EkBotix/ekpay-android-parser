@@ -61,11 +61,10 @@ class SmsIntegrationTest {
     }
     @After fun close(){db.close()}
 
-    private fun input(txn:String,hash:String):androidx.work.Data {
-        val now=System.currentTimeMillis()
+    private fun input(txn:String,hash:String,provider:String="bkash",receivedAt:Long=System.currentTimeMillis()):androidx.work.Data {
         return workDataOf(
-            "provider" to "bkash", "transactionId" to txn, "amountMinor" to 10500L,
-            "messageHash" to hash, "receivedAt" to now
+            "provider" to provider, "transactionId" to txn, "amountMinor" to 10500L,
+            "messageHash" to hash, "receivedAt" to receivedAt, "providerTimestamp" to com.ekbotix.ekpayparser.protocol.Protocol.iso(receivedAt)
         )
     }
 
@@ -94,5 +93,35 @@ class SmsIntegrationTest {
         assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(value,repository))
         assertEquals(beforeQueue+1,db.queue().totalCount());assertEquals(beforeDedupe+1,db.queue().dedupeCount())
         assertTrue(db.queue().hasDedupe("bkash","TEST_RETRY123","2".repeat(64)))
+    }
+
+    @Test fun dedupeScopesTransactionByProviderAndHashAcrossMessages()=runBlocking {
+        assertTrue(repository.pair(device,0,"c".repeat(64)))
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_SHARED","3".repeat(64),"bkash"),repository))
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_SHARED","4".repeat(64),"nagad"),repository))
+        assertEquals(2,db.queue().totalCount())
+        // Same provider/transaction remains a duplicate even when whitespace changes the body hash.
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_SHARED","5".repeat(64),"bkash"),repository))
+        // The same body hash is duplicate even under another provider/transaction and timestamp.
+        val now=System.currentTimeMillis()
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_OTHER","3".repeat(64),"rocket",now),repository))
+        assertEquals(2,db.queue().totalCount())
+
+        val firstMultipart=com.ekbotix.ekpayparser.sms.MultipartAssembler.assemble(listOf(
+            com.ekbotix.ekpayparser.sms.SmsPart("TEST_UPAY","Payment received Tk 1.00. ",now+1_000L),
+            com.ekbotix.ekpayparser.sms.SmsPart("TEST_UPAY","TrxID TEST_MULTI",now+1_001L)
+        ))!!
+        val redelivery=com.ekbotix.ekpayparser.sms.MultipartAssembler.assemble(listOf(
+            com.ekbotix.ekpayparser.sms.SmsPart("TEST_UPAY","Payment received Tk 1.00. ",now+2_000L),
+            com.ekbotix.ekpayparser.sms.SmsPart("TEST_UPAY","TrxID TEST_MULTI",now+2_001L)
+        ))!!
+        val parser=com.ekbotix.ekpayparser.sms.UpaySmsParser()
+        val firstHash=parser.parse(firstMultipart).messageHash!!
+        val redeliveryHash=parser.parse(redelivery).messageHash!!
+        assertEquals(firstHash,redeliveryHash)
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_MULTI",firstHash,"upay",now+1_000L),repository))
+        assertEquals(ListenableWorker.Result.success(),SmsWorkProcessor.run(input("TEST_MULTI",redeliveryHash,"upay",now+2_000L),repository))
+        assertEquals(3,db.queue().totalCount())
+        assertEquals(3,db.queue().dedupeCount())
     }
 }

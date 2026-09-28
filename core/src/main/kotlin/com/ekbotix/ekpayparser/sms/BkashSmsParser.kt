@@ -1,40 +1,26 @@
 package com.ekbotix.ekpayparser.sms
 
-import java.math.BigDecimal
+import java.security.MessageDigest
 
-abstract class AbstractSmsParser : SmsProviderParser {
-    protected fun hash(body: String): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        return digest.digest(body.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    }
-
-    protected fun parseAmountMinor(amountStr: String): Long? {
-        return try {
-            val bd = BigDecimal(amountStr)
-            if (bd.scale() > 2) return null // Reject extra decimals
-            bd.movePointRight(2).longValueExact()
-        } catch (e: Exception) {
-            null
-        }
-    }
-}
-
-class BkashSmsParser : AbstractSmsParser() {
-    override fun supports(sender: String, body: String): Boolean = sender.equals("TEST_BKASH", ignoreCase = true)
-
-    override fun parse(message: SmsMessageInput): ParseResult {
-        if (!supports(message.sender, message.body)) return ParseResult(ParseStatus.UNSUPPORTED_SENDER)
-
-        val amountRegex = Regex("Tk\\s*([0-9]+\\.?[0-9]*)", RegexOption.IGNORE_CASE)
-        val txnRegex = Regex("TxnId:\\s*(TEST_[A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
-
-        val amountMatch = amountRegex.find(message.body)
-        val txnMatch = txnRegex.find(message.body)
-        if (amountMatch == null || txnMatch == null) return ParseResult(ParseStatus.INVALID)
-
-        val amountMinor = parseAmountMinor(amountMatch.groupValues[1]) ?: return ParseResult(ParseStatus.INVALID)
-        if (amountMinor <= 0) return ParseResult(ParseStatus.INVALID)
-
-        return ParseResult(ParseStatus.PARSED, "bkash", txnMatch.groupValues[1], amountMinor, "BDT", localReceivedAt = message.receivedAt, messageHash = hash(message.body))
+abstract class RuleBasedSmsParser(private val rule:ProviderRuleSet):SmsProviderParser {
+    override fun supports(sender:String,body:String)=SenderRegistry.normalize(sender) in rule.testSenders
+    override fun parse(message:SmsMessageInput):ParseResult {
+        if(!supports(message.sender,message.body))return ParseResult(ParseStatus.UNSUPPORTED_SENDER)
+        val direction=SmsSafety.direction(message.body)
+        if(direction in setOf(TransactionDirection.AUTHENTICATION,TransactionDirection.PROMOTIONAL,TransactionDirection.BALANCE_ONLY))return ParseResult(ParseStatus.IGNORED,direction=direction,parserVersion=rule.parserVersion)
+        if(direction in setOf(TransactionDirection.OUTGOING,TransactionDirection.REFUND_OR_REVERSAL))return ParseResult(ParseStatus.UNSUPPORTED_TYPE,direction=direction,parserVersion=rule.parserVersion)
+        if(direction!=TransactionDirection.INCOMING)return ParseResult(ParseStatus.MANUAL_REVIEW,direction=direction,parserVersion=rule.parserVersion)
+        val amounts=FormatAnalyzer.amountCandidates(message.body)
+        val ids=FormatAnalyzer.transactionCandidates(message.body,rule)
+        if(amounts.size>1||ids.size>1)return ParseResult(ParseStatus.AMBIGUOUS,direction=direction,parserVersion=rule.parserVersion)
+        if(amounts.size!=1||ids.size!=1)return ParseResult(ParseStatus.INVALID,direction=direction,parserVersion=rule.parserVersion)
+        val transactionId=ids.single()
+        if(!transactionId.matches(Regex("TEST_[A-Za-z0-9_-]{1,59}")))return ParseResult(ParseStatus.MANUAL_REVIEW,direction=direction,parserVersion=rule.parserVersion)
+        val amountMinor=FormatAnalyzer.parseMinor(amounts.single()) ?: return ParseResult(ParseStatus.INVALID,direction=direction,parserVersion=rule.parserVersion)
+        val hash=MessageDigest.getInstance("SHA-256").digest(message.body.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it)}
+        // No provider timestamp format/timezone is approved yet; never substitute local receive time.
+        return ParseResult(ParseStatus.PARSED,rule.provider,transactionId,amountMinor,"BDT",providerTimestamp=null,localReceivedAt=message.receivedAt,messageHash=hash,parserVersion=rule.parserVersion,direction=direction)
     }
 }
+
+class BkashSmsParser:RuleBasedSmsParser(ProviderRules.bkash)

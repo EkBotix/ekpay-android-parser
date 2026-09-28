@@ -1,9 +1,10 @@
 # Android sandbox security boundary
 
-No SMS/contact/phone/hardware identifiers or provider/account secrets. Internet/network
-state permissions only in app source; WorkManager merged permissions separately verified.
-FLAG_SECURE on every screen; only the app's launcher activity is exported, no WebView/custom
-service or receiver. Merged library exports are limited to BIND_JOB_SERVICE-protected
+No inbox/history access, contacts, phone/hardware identifiers or provider/account secrets.
+Phase 9 retains only RECEIVE_SMS for system-delivered events; READ_SMS, SEND_SMS and
+READ_PHONE_STATE remain absent. The exported receiver accepts only the framework-protected
+`android.provider.Telephony.SMS_RECEIVED` action; no experimental dynamic receiver or
+receiver-level permission plumbing remains. FLAG_SECURE remains enabled and there is no WebView. Merged library exports are limited to BIND_JOB_SERVICE-protected
 WorkManager scheduling and DUMP-protected diagnostics/profile receivers. Automated checks
 enforce this allowlist. Backup/cloud/device transfer excluded. No service/anon/API/HMAC backend keys
 in app/config. Test-only build marker cannot be switched to live.

@@ -1,46 +1,77 @@
 package com.ekbotix.ekpayparser.sms
 
-import org.junit.Test
 import org.junit.Assert.*
+import org.junit.Test
 
 class SmsParserTest {
+    private val pipeline=SmsParserPipeline(listOf(BkashSmsParser(),NagadSmsParser(),RocketSmsParser(),UpaySmsParser()))
+    private fun parse(sender:String,body:String)=pipeline.process(SmsMessageInput(sender,body,1_000L))
 
-    @Test
-    fun testBkashParser() {
-        val parser = BkashSmsParser()
-
-        // Happy path
-        val msg = SmsMessageInput("TEST_BKASH", "You have received Tk 500.50 from 01711. TxnId: TEST_TXN123", 1000L)
-        val res = parser.parse(msg)
-        assertEquals(ParseStatus.PARSED, res.status)
-        assertEquals(50050L, res.amountMinor)
-        assertEquals("TEST_TXN123", res.transactionId)
-
-        val msgInt = SmsMessageInput("TEST_BKASH", "You have received Tk 10 from 01711. TxnId: TEST_TXN124", 1000L)
-        assertEquals(1000L, parser.parse(msgInt).amountMinor)
-
-        val msgOneCent = SmsMessageInput("TEST_BKASH", "You have received Tk 0.01 from 01711. TxnId: TEST_TXN125", 1000L)
-        assertEquals(1L, parser.parse(msgOneCent).amountMinor)
-
-        // Invalid extra decimals
-        val msgInvalid = SmsMessageInput("TEST_BKASH", "You have received Tk 10.123 from 01711. TxnId: TEST_TXN126", 1000L)
-        assertEquals(ParseStatus.INVALID, parser.parse(msgInvalid).status)
-
-        // Invalid TxnId format (missing TEST_ prefix)
-        val msgInvalidTxn = SmsMessageInput("TEST_BKASH", "You have received Tk 500.50 from 01711. TxnId: TXN123", 1000L)
-        assertEquals(ParseStatus.INVALID, parser.parse(msgInvalidTxn).status)
+    @Test fun syntheticProviderRulesParseOnlyExplicitIncomingTypes() {
+        val cases=listOf(
+            "TEST_BKASH" to "You have received Tk 500.50. TxnId: TEST_BK1",
+            "TEST_NAGAD" to "Money received. Amount: Tk 10.00. TxnID: TEST_NG1",
+            "TEST_ROCKET" to "You received Tk 20.00. TxnId: TEST_RK1",
+            "TEST_UPAY" to "Payment received Tk 30.00. TrxID TEST_UP1"
+        )
+        cases.forEach { (sender,body) ->
+            val result=parse(sender,body);assertEquals(ParseStatus.PARSED,result.status)
+            assertEquals(TransactionDirection.INCOMING,result.direction);assertNull(result.providerTimestamp)
+            assertTrue(result.transactionId!!.startsWith("TEST_"));assertNotNull(result.messageHash)
+        }
+        assertEquals(50050L,parse(cases[0].first,cases[0].second).amountMinor)
+        assertEquals(ParseStatus.UNSUPPORTED_SENDER,parse("bKash","You have received Tk 1.00. TxnId: TEST_X").status)
+        assertEquals(SenderRegistryState.UNVERIFIED,SenderRegistry.state("bKash"))
     }
 
-    @Test
-    fun testPipelineFilters() {
-        val pipeline = SmsParserPipeline(listOf(BkashSmsParser(), NagadSmsParser(), RocketSmsParser(), UpaySmsParser()))
+    @Test fun amountSelectionRejectsAmbiguityButExcludesFeeAndBalance() {
+        val safe=parse("TEST_BKASH","You have received Tk 100.00. Fee Tk 2.00. Balance Tk 900.00. TxnId: TEST_SAFE")
+        assertEquals(ParseStatus.PARSED,safe.status);assertEquals(10_000L,safe.amountMinor)
+        assertEquals(ParseStatus.AMBIGUOUS,parse("TEST_BKASH","You have received Tk 100.00 and Tk 200.00. TxnId: TEST_AMT").status)
+        assertEquals(ParseStatus.AMBIGUOUS,parse("TEST_BKASH","You have received Tk 100.00. TxnId: TEST_A TxnId: TEST_B").status)
+        assertEquals(ParseStatus.INVALID,parse("TEST_BKASH","You have received Tk 10.123. TxnId: TEST_DEC").status)
+    }
 
-        // OTP Ignored
-        val msgOtp = SmsMessageInput("TEST_BKASH", "Your bKash verification code is 1234. TxnId: TEST_X", 1000L)
-        assertEquals(ParseStatus.IGNORED, pipeline.process(msgOtp).status)
+    @Test fun authenticationPromotionBalanceAndDirectionsFailSafe() {
+        listOf("OTP 1234 do not share","Your verification code expires soon","আপনার ওটিপি ১২৩৪ শেয়ার করবেন না").forEach {
+            assertEquals(ParseStatus.IGNORED,parse("TEST_BKASH",it).status)
+        }
+        listOf("Cashback campaign offer","Get a discount voucher reward","ক্যাশব্যাক অফার").forEach {
+            assertEquals(ParseStatus.IGNORED,parse("TEST_BKASH",it).status)
+        }
+        assertEquals(ParseStatus.IGNORED,parse("TEST_BKASH","Your current balance is Tk 20.00").status)
+        listOf("Money sent Tk 10.00 TxnId: TEST_S","Cash out Tk 10.00 TxnId: TEST_C","Payment refunded Tk 10.00 TxnId: TEST_R","Transaction reversed Tk 10.00 TxnId: TEST_V","Payment failed Tk 10.00 TxnId: TEST_F").forEach {
+            assertEquals(ParseStatus.UNSUPPORTED_TYPE,parse("TEST_BKASH",it).status)
+        }
+    }
 
-        // Promo Ignored
-        val msgPromo = SmsMessageInput("TEST_BKASH", "Get 50% cashback offer. TxnId: TEST_X", 1000L)
-        assertEquals(ParseStatus.IGNORED, pipeline.process(msgPromo).status)
+    @Test fun unicodeNormalizationSupportsCandidatesWithoutProviderClaims() {
+        val result=parse("test_bkash","You have received\u00a0Tk ১২৩.৪৫ — TxnId： TEST_UNICODE")
+        assertEquals(ParseStatus.PARSED,result.status);assertEquals(12_345L,result.amountMinor)
+        val lab=FormatAnalyzer.analyze("bkash","Received Tk 100.00 from 01XXXXXXXXX. TxnId XXXXXXXX.")
+        assertEquals(ParseStatus.MANUAL_REVIEW,lab.status);assertEquals(listOf("100.00"),lab.amountCandidates)
+        assertEquals(listOf("XXXXXXXX"),lab.transactionIdCandidates);assertNull(lab.timestampCandidate)
+    }
+
+    @Test fun multipartIsBoundedOrderedAndSenderConsistent() {
+        val assembled=MultipartAssembler.assemble(listOf(SmsPart("TEST_BKASH","You have received ",1000),SmsPart("test_bkash","Tk 1.00. TxnId: TEST_M",1001)))
+        assertEquals("You have received Tk 1.00. TxnId: TEST_M",assembled!!.body)
+        assertNull(MultipartAssembler.assemble(listOf(SmsPart("TEST_BKASH","a",1000),SmsPart("TEST_NAGAD","b",1001))))
+        assertNull(MultipartAssembler.assemble(listOf(SmsPart("TEST_BKASH","a",1000),SmsPart("TEST_BKASH","b",200_000))))
+        assertNull(MultipartAssembler.assemble(List(11){SmsPart("TEST_BKASH","x",1000)}))
+    }
+
+    @Test fun messageHashIsRawBodyStableAndNotAuthenticityProof() {
+        val body="You have received Tk 1.00. TxnId: TEST_HASH"
+        val first=parse("TEST_BKASH",body);val retry=parse("TEST_BKASH",body)
+        assertEquals(first.messageHash,retry.messageHash)
+        assertNotEquals(first.messageHash,parse("TEST_BKASH",body.replace(" ","  ")).messageHash)
+    }
+
+    @Test fun senderNormalizationDoesNotCollapseLocalAndCountryCodeForms() {
+        assertEquals("+8801712345678",SenderRegistry.normalize("880 1712-345678"))
+        assertEquals("01712345678",SenderRegistry.normalize("01712 345678"))
+        assertNotEquals(SenderRegistry.normalize("01712345678"),SenderRegistry.normalize("+8801712345678"))
+        assertEquals("TEST_BKASH",SenderRegistry.normalize("test_bkash"))
     }
 }

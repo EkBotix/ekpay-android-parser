@@ -2,15 +2,22 @@ import assert from 'node:assert/strict';
 import {readFile, readdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 const root=resolve(import.meta.dirname,'..');
-const banned=/android\.permission\.(?:READ_SMS|RECEIVE_SMS|SEND_SMS|READ_CONTACTS|READ_PHONE_STATE|READ_PHONE_NUMBERS)|android\.provider\.Telephony\.SMS/;
+const banned=/android\.permission\.(?:READ_SMS|SEND_SMS|READ_CONTACTS|READ_PHONE_STATE|READ_PHONE_NUMBERS|FOREGROUND_SERVICE_DATA_SYNC|POST_NOTIFICATIONS)/;
 for(const variant of ['debug','release']) {
   const xml=await readFile(resolve(root,`app/build/intermediates/merged_manifests/${variant}/process${variant[0].toUpperCase()+variant.slice(1)}Manifest/AndroidManifest.xml`),'utf8');
   assert.ok(!banned.test(xml),'Forbidden permission/receiver');
+  assert.ok(!xml.includes('ParserForegroundService'),'Experimental foreground service remains');
+  assert.match(xml,/android\.permission\.RECEIVE_SMS/);
   assert.match(xml,/android:allowBackup="false"/); assert.match(xml,/android:usesCleartextTraffic="false"/);
   for(const component of xml.matchAll(/<(?:activity|service|receiver|provider)\b[^>]*>/g)) {
     const tag=component[0]; if(!tag.includes('android:exported="true"')) continue;
     const name=/android:name="([^"]+)"/.exec(tag)?.[1];
     if(name==='com.ekbotix.ekpayparser.ui.MainActivity') continue;
+    if(name==='com.ekbotix.ekpayparser.sms.SmsReceiver') {
+      assert.ok(!tag.includes('android:permission='),'OEM-compatible SMS receiver must not impose a broadcaster permission');
+      assert.match(xml,/android\.provider\.Telephony\.SMS_RECEIVED/);
+      continue;
+    }
     const required=new Map([
       ['androidx.work.impl.background.systemjob.SystemJobService','android.permission.BIND_JOB_SERVICE'],
       ['androidx.work.impl.diagnostics.DiagnosticsReceiver','android.permission.DUMP'],
